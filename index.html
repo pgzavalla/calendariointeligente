@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Comisiones compatibles | Ingeniería Industrial</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: '#172026',
+            paper: '#f5f3ee',
+            coral: '#e86f51',
+            teal: '#126e72',
+            moss: '#7b8f63',
+            line: '#d9d8d0'
+          },
+          fontFamily: {
+            display: ['Fraunces', 'Georgia', 'serif'],
+            sans: ['DM Sans', 'ui-sans-serif', 'sans-serif']
+          },
+          boxShadow: {
+            soft: '0 14px 40px rgba(23, 32, 38, .08)',
+            card: '0 8px 22px rgba(23, 32, 38, .07)'
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <style>
+    html { scroll-behavior: smooth; }
+    body { background: #f5f3ee; color: #172026; }
+    .grid-paper { background-image: linear-gradient(#e5e3dc 1px, transparent 1px), linear-gradient(90deg, #e5e3dc 1px, transparent 1px); background-size: 32px 32px; }
+    .schedule-line { position: relative; }
+    .schedule-line::before { content: ''; position: absolute; left: 7px; top: 10px; bottom: -10px; width: 1px; background: #d9d8d0; }
+    .schedule-line:last-child::before { display: none; }
+    .fade-up { animation: fadeUp .55s ease both; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .card-selected { outline: 3px solid rgba(232,111,81,.22); border-color: #e86f51; }
+    .bar { transition: width .7s cubic-bezier(.2,.8,.2,1); }
+    .calendar-scroll { scrollbar-color: #126e72 #e9e7df; }
+    .calendar-grid { min-width: 850px; }
+    .calendar-lane { height: 744px; background-image: linear-gradient(to bottom, #e1e0d9 1px, transparent 1px); background-size: 100% 24px; }
+    .calendar-event { position: absolute; left: 3px; right: 3px; overflow: hidden; border-left: 3px solid; padding: 5px 5px 4px; line-height: 1.15; }
+    .calendar-event:hover { z-index: 3; filter: saturate(1.15); transform: translateY(-1px); }
+    .calendar-event.has-overlap { border: 2px solid #c94d3d; border-left-width: 5px; box-shadow: 0 0 0 2px rgba(201, 77, 61, .18); }
+    .calendar-event.has-overlap::after { content: attr(data-overlap); position: absolute; left: 100%; top: 4px; z-index: 5; display: none; width: 190px; margin-left: 8px; border: 1px solid #c94d3d; border-radius: 7px; background: #fff8f5; padding: 7px; color: #783b2b; font-size: 10px; line-height: 1.35; box-shadow: 0 8px 18px rgba(23, 32, 38, .14); }
+    .calendar-event.has-overlap:hover::after { display: block; }
+    .calendar-labels { height: 744px; background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 23px, #e1e0d9 23px, #e1e0d9 24px); }
+    .schedule-card { min-width: 0; overflow: hidden; }
+    .schedule-card .commission-label { min-width: 0; overflow-wrap: anywhere; word-break: break-word; text-align: right; }
+    @media print {
+      header, #notice, #cards, #how-it-works, footer, #calendar-actions { display: none !important; }
+      #calendar-section { padding-top: 0; }
+      .calendar-panel { break-inside: avoid; box-shadow: none !important; }
+      body { background: white; }
+    }
+  </style>
+</head>
+<body class="font-sans antialiased">
+  <section id="selection-screen" class="min-h-screen bg-paper">
+    <div class="mx-auto max-w-6xl px-5 py-8 sm:px-8 lg:px-12 lg:py-12">
+      <nav class="mb-16 flex items-center justify-between">
+        <div class="flex items-center gap-3 text-sm font-bold tracking-tight">
+          <span class="grid h-9 w-9 place-items-center rounded-full bg-ink text-paper">II</span>
+          <span>Ingeniería Industrial</span>
+        </div>
+        <span class="rounded-full border border-line bg-white/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-[.16em] text-teal">Nuevo análisis</span>
+      </nav>
+      <div class="max-w-3xl">
+        <p class="mb-4 text-xs font-bold uppercase tracking-[.22em] text-coral">01 / Selección de materias</p>
+        <h1 class="font-display text-5xl leading-[.96] tracking-tight sm:text-7xl">Armá tu cursada<br><span class="text-teal">a tu medida.</span></h1>
+        <p class="mt-6 max-w-xl text-base leading-7 text-ink/65 sm:text-lg">Elegí las materias que querés cursar y vamos a buscar las combinaciones de comisiones que no se superponen.</p>
+      </div>
+      <div class="mt-12 flex items-end justify-between gap-4 border-b border-line pb-4">
+        <div><p class="text-xs font-bold uppercase tracking-[.18em] text-coral">Materias disponibles</p><p id="selection-status" class="mt-2 text-sm text-ink/55">Cargá un archivo Excel para ver las materias disponibles</p></div>
+        <span id="selected-count" class="rounded-full bg-teal px-3 py-1.5 text-xs font-bold text-white">0 seleccionadas</span>
+      </div>
+      <label class="mt-6 flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-dashed border-teal bg-teal/5 p-5 transition hover:bg-teal/10">
+        <span class="min-w-0"><span class="block font-bold">Cargar archivo de comisiones</span><span id="file-status" class="mt-1 block truncate text-xs text-ink/55">Seleccioná un archivo Excel (.xlsx o .xls)</span></span>
+        <span class="shrink-0 rounded-full bg-teal px-4 py-2 text-xs font-bold text-white">Elegir archivo</span>
+        <input id="excel-file" type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" class="sr-only">
+      </label>
+      <div class="mt-6 flex flex-col gap-4 rounded-2xl border border-line bg-white p-5 shadow-card sm:flex-row sm:items-center sm:justify-between">
+        <label class="flex items-start gap-3 text-sm font-semibold">
+          <input id="evening-only" type="checkbox" class="mt-0.5 h-4 w-4 accent-teal">
+          <span><span class="block">Solo cursar después de las</span><span class="mt-1 block text-xs font-normal text-ink/55">Se descartan las comisiones con cualquier horario anterior al límite.</span></span>
+        </label>
+        <label class="flex items-center gap-2 text-sm font-bold text-ink/70">Hora mínima
+          <select id="minimum-time" class="rounded-lg border border-line bg-paper px-3 py-2 font-mono text-sm text-ink outline-none focus:border-teal">
+            <option value="18:00" selected>18:00</option><option value="18:30">18:30</option><option value="19:00">19:00</option><option value="19:30">19:30</option><option value="20:00">20:00</option>
+          </select>
+        </label>
+      </div>
+      <div class="mt-3 flex flex-col gap-4 rounded-2xl border border-line bg-white p-5 shadow-card sm:flex-row sm:items-center sm:justify-between">
+        <label class="flex items-start gap-3 text-sm font-semibold">
+          <input id="few-days" type="checkbox" checked class="mt-0.5 h-4 w-4 accent-teal">
+          <span><span class="block">Priorizar menos días de cursada</span><span class="mt-1 block text-xs font-normal text-ink/55">Ordena primero las alternativas que concentran las clases en menos días.</span></span>
+        </label>
+        <label class="flex items-center gap-2 text-sm font-bold text-ink/70">Superposición máxima
+          <select id="overlap-limit" class="rounded-lg border border-line bg-paper px-3 py-2 font-mono text-sm text-ink outline-none focus:border-teal">
+            <option value="0">Sin superposición</option><option value="30">Hasta 30 min</option><option value="60" selected>Hasta 1 hora</option><option value="90">Hasta 1 h 30 min</option><option value="120">Hasta 2 horas</option><option value="150">Hasta 2 h 30 min</option><option value="180">Hasta 3 horas</option>
+          </select>
+        </label>
+      </div>
+      <div id="subject-picker" class="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"></div>
+      <p id="selection-error" class="mt-4 hidden rounded-lg bg-coral/10 px-4 py-3 text-sm font-semibold text-coral">Seleccioná al menos una materia para continuar.</p>
+      <div class="mt-8 flex justify-end">
+        <button id="generate-button" disabled class="rounded-full bg-ink px-6 py-3 text-sm font-bold text-paper transition hover:bg-teal disabled:cursor-not-allowed disabled:opacity-35">Generar alternativas <span class="ml-2">→</span></button>
+      </div>
+    </div>
+  </section>
+  <main id="results-app" class="hidden min-h-screen overflow-hidden">
+    <header class="relative border-b border-line bg-paper">
+      <div class="absolute inset-0 grid-paper opacity-55"></div>
+      <div class="relative mx-auto max-w-7xl px-5 pb-14 pt-8 sm:px-8 lg:px-12">
+        <nav class="mb-16 flex items-center justify-between">
+          <div class="flex items-center gap-3 text-sm font-bold tracking-tight">
+            <span class="grid h-9 w-9 place-items-center rounded-full bg-ink text-paper">II</span>
+            <span>Ingeniería Industrial</span>
+          </div>
+          <span class="rounded-full border border-line bg-white/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-[.16em] text-teal">Plan de cursado</span>
+        </nav>
+        <div class="max-w-4xl">
+          <p class="mb-4 text-xs font-bold uppercase tracking-[.22em] text-coral">Organizador de comisiones · 2026</p>
+          <h1 class="font-display text-5xl leading-[.96] tracking-tight sm:text-7xl">Tu semana,<br><span class="text-teal">sin cruces.</span></h1>
+          <p class="mt-6 max-w-xl text-base leading-7 text-ink/65 sm:text-lg">El algoritmo compara todas las comisiones disponibles y arma las combinaciones más completas para que puedas decidir con claridad.</p>
+        </div>
+        <div class="mt-10 flex flex-wrap gap-3 text-sm font-semibold">
+          <a href="#alternativas" class="rounded-full bg-ink px-5 py-3 text-paper transition hover:bg-teal">Ver alternativas <span class="ml-2">↓</span></a>
+          <button id="edit-search" class="rounded-full border border-line bg-white/75 px-5 py-3 text-ink transition hover:border-teal hover:text-teal">Modificar búsqueda</button>
+          <span id="checked-label" class="flex items-center gap-2 rounded-full border border-line bg-white/75 px-5 py-3 text-ink/65"><span class="h-2 w-2 rounded-full bg-moss"></span> Analizando horarios...</span>
+        </div>
+      </div>
+    </header>
+
+    <section id="alternativas" class="mx-auto max-w-7xl px-5 py-12 sm:px-8 lg:px-12 lg:py-16">
+      <div class="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+        <div>
+          <p class="mb-2 text-xs font-bold uppercase tracking-[.2em] text-coral">01 / Resultado</p>
+          <h2 class="font-display text-4xl tracking-tight sm:text-5xl">Alternativas compatibles</h2>
+        </div>
+        <div class="flex items-center gap-4 text-sm text-ink/60">
+          <span id="course-count" class="font-semibold text-ink">—</span>
+          <span>materias cubiertas</span>
+        </div>
+      </div>
+
+      <div id="search-summary" class="mb-8 flex flex-col gap-4 rounded-2xl border border-line bg-white px-5 py-4 shadow-card sm:flex-row sm:items-center sm:justify-between">
+        <div class="min-w-0">
+          <p class="text-xs font-bold uppercase tracking-[.18em] text-coral">Tu búsqueda</p>
+          <p id="summary-subjects" class="mt-2 break-words text-sm font-semibold text-ink">—</p>
+          <p id="summary-restriction" class="mt-1 text-xs text-ink/55">—</p>
+        </div>
+        <button id="edit-search-summary" class="shrink-0 rounded-full border border-line px-4 py-2.5 text-xs font-bold text-teal transition hover:border-teal">Modificar selección</button>
+      </div>
+
+      <div id="notice" class="mb-8 flex gap-4 border-l-4 border-teal bg-white px-5 py-4 shadow-card">
+        <span class="mt-0.5 text-xl text-teal">✓</span>
+        <div>
+          <p class="font-bold">Combinaciones compatibles</p>
+          <p class="mt-1 text-sm leading-6 text-ink/65">Se respetan todos los horarios asociados a cada comisión. Las alternativas pueden incluir hasta el límite de superposición elegido.</p>
+        </div>
+      </div>
+
+      <div id="cards" class="grid gap-6 lg:grid-cols-3"></div>
+      <div id="more-options-wrap" class="mt-8 hidden text-center">
+        <p id="options-count" class="mb-3 text-xs text-ink/50"></p>
+        <button id="more-options" class="rounded-full border border-teal bg-white px-5 py-3 text-sm font-bold text-teal transition hover:bg-teal hover:text-white">Ver otra alternativa</button>
+      </div>
+      <p id="empty" class="hidden rounded-xl border border-dashed border-line p-8 text-center text-ink/60">No se encontraron combinaciones compatibles.</p>
+    </section>
+
+    <section id="calendar-section" class="border-y border-line bg-white/60">
+      <div class="mx-auto max-w-7xl px-5 py-12 sm:px-8 lg:px-12 lg:py-16">
+        <div class="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+          <div>
+            <p class="mb-2 text-xs font-bold uppercase tracking-[.2em] text-coral">02 / Comparador visual</p>
+            <p class="mb-3 text-sm font-semibold text-ink/55">Cada opción tiene su propio calendario semanal</p>
+            <h2 class="font-display text-4xl tracking-tight sm:text-5xl">Una alternativa<br><span class="text-teal">por vez.</span></h2>
+          </div>
+          <div id="calendar-actions" class="flex flex-wrap gap-2">
+            <button id="print-calendar" class="rounded-full bg-ink px-4 py-2.5 text-xs font-bold text-paper transition hover:bg-teal">Imprimir calendario</button>
+            <button id="download-calendar" class="rounded-full border border-line bg-white px-4 py-2.5 text-xs font-bold transition hover:border-teal hover:text-teal">Descargar .txt</button>
+          </div>
+        </div>
+        <div id="calendar" class="calendar-scroll overflow-x-auto pb-3"></div>
+        <div class="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-xs text-ink/55" id="calendar-legend"></div>
+      </div>
+    </section>
+
+    <section id="how-it-works" class="border-y border-line bg-white/60">
+      <div class="mx-auto max-w-7xl px-5 py-12 sm:px-8 lg:px-12">
+        <div class="grid gap-8 md:grid-cols-[.7fr_1.3fr] md:items-center">
+          <div>
+            <p class="mb-2 text-xs font-bold uppercase tracking-[.2em] text-coral">03 / Lectura rápida</p>
+            <h2 class="font-display text-3xl tracking-tight sm:text-4xl">Cómo se construye<br>cada opción</h2>
+          </div>
+          <div class="grid gap-3 sm:grid-cols-3">
+            <div class="border-t-2 border-teal pt-3"><p class="font-bold">01</p><p class="mt-1 text-sm leading-5 text-ink/60">Elige una comisión por materia.</p></div>
+            <div class="border-t-2 border-coral pt-3"><p class="font-bold">02</p><p class="mt-1 text-sm leading-5 text-ink/60">Compara cada franja horaria.</p></div>
+            <div class="border-t-2 border-moss pt-3"><p class="font-bold">03</p><p class="mt-1 text-sm leading-5 text-ink/60">Descarta todo cruce.</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <footer class="mx-auto max-w-7xl px-5 py-8 text-xs text-ink/45 sm:px-8 lg:px-12">Organizador de cursado · Datos cargados para Ingeniería Industrial</footer>
+  </main>
+
+  <script>
+    let subjects = [];
+    let loadedSubjects = [];
+    let eveningOnly = false;
+    let minimumStartTime = 18 * 60;
+    let prioritizeFewDays = true;
+    let maximumOverlapMinutes = 60;
+    let visibleAlternativeCount = 3;
+
+    const dayOrder = { Lun: 1, Mar: 2, Mié: 3, Jue: 4, Vie: 5 };
+    const toMinutes = time => { const [hours, minutes] = time.split(':').map(Number); return hours * 60 + minutes; };
+    const overlaps = (first, second) => first.day === second.day && toMinutes(first.start) < toMinutes(second.end) && toMinutes(second.start) < toMinutes(first.end);
+    const overlapMinutes = (first, second) => {
+      if (first.day !== second.day) return 0;
+      return Math.max(0, Math.min(toMinutes(first.end), toMinutes(second.end)) - Math.max(toMinutes(first.start), toMinutes(second.start)));
+    };
+    const flattenSlots = selection => selection.flatMap(item => item ? item.option.slots.map(([day, start, end]) => ({ day, start, end, subject: item.subject, code: item.option.code })) : []);
+
+    // Backtracking: permits one omitted subject so the result stays honest when the input has no 7-subject solution.
+    function buildAlternatives() {
+      const combinations = [];
+      function visit(index, selected, usedSlots, skipped, totalOverlap) {
+        if (index === subjects.length) {
+          const days = new Set(usedSlots.map(slot => slot.day)).size;
+          combinations.push({ selected: [...selected], skipped, covered: subjects.length - skipped, days, totalOverlap });
+          return;
+        }
+        const subject = subjects[index];
+        for (const option of subject.options) {
+          if (eveningOnly && option.slots.some(([, start]) => toMinutes(start) < minimumStartTime)) continue;
+          const slots = option.slots.map(([day, start, end]) => ({ day, start, end }));
+          const optionOverlap = slots.reduce((total, slot) => total + usedSlots.reduce((slotTotal, existing) => slotTotal + overlapMinutes(slot, existing), 0), 0);
+          if (optionOverlap <= maximumOverlapMinutes) visit(index + 1, [...selected, { subject: subject.name, option }], [...usedSlots, ...slots], skipped, totalOverlap + optionOverlap);
+        }
+        if (skipped < 1) visit(index + 1, [...selected, null], usedSlots, skipped + 1, totalOverlap);
+      }
+      visit(0, [], [], 0, 0);
+      return combinations
+        .filter(item => item.covered === subjects.length)
+        .sort((a, b) => (prioritizeFewDays ? a.days - b.days : 0) || a.totalOverlap - b.totalOverlap)
+        .filter((item, index, list) => list.findIndex(other => signature(other) === signature(item)) === index)
+        ;
+    }
+    function signature(item) { return item.selected.map(selection => selection ? selection.option.code : 'omitido').join('-'); }
+
+    let alternatives = [];
+    const cards = document.querySelector('#cards');
+    const selectedKey = 'chosen-schedule';
+    let chosen = Number(localStorage.getItem(selectedKey) || 0);
+
+    function formatSlots(slots) {
+      return slots.map(([day, start, end]) => `${day} ${start}–${end}`).join('  ·  ');
+    }
+    const subjectColors = {
+      'Gestión de la Calidad': { bg: '#d8eee9', border: '#126e72', text: '#174d4d' },
+      'Comercialización': { bg: '#f9dfd2', border: '#e86f51', text: '#783b2b' },
+      'Electrónica': { bg: '#e6e2f3', border: '#7161a8', text: '#4a3b76' },
+      'Seminario Moral / V': { bg: '#f2e8bd', border: '#a7861b', text: '#65530b' },
+      'Procesos Industriales II': { bg: '#dce9ca', border: '#7b8f63', text: '#43552f' },
+      'Higiene y Seguridad': { bg: '#dce6f3', border: '#4d739d', text: '#31516f' },
+      'Proyecto Plantas Ind.': { bg: '#f0d8e8', border: '#ad5e89', text: '#713e5d' }
+    };
+    const fallbackColors = [
+      { bg: '#d8eee9', border: '#126e72', text: '#174d4d' },
+      { bg: '#f9dfd2', border: '#e86f51', text: '#783b2b' },
+      { bg: '#e6e2f3', border: '#7161a8', text: '#4a3b76' },
+      { bg: '#f2e8bd', border: '#a7861b', text: '#65530b' },
+      { bg: '#dce9ca', border: '#7b8f63', text: '#43552f' },
+      { bg: '#dce6f3', border: '#4d739d', text: '#31516f' },
+      { bg: '#f0d8e8', border: '#ad5e89', text: '#713e5d' }
+    ];
+    const colorFor = subject => subjectColors[subject] || fallbackColors[subjects.findIndex(item => item.name === subject) % fallbackColors.length] || fallbackColors[0];
+    const calendarDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie'];
+    const calendarStart = 7 * 60 + 30;
+    const calendarEnd = 23 * 60;
+    const calendarStep = 30;
+    const timeLabels = Array.from({ length: (calendarEnd - calendarStart) / calendarStep }, (_, index) => {
+      const minutes = calendarStart + index * calendarStep;
+      return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+    });
+    function calendarEvent(selection, slot, overlapInfo) {
+      const colors = colorFor(selection.subject);
+      const pixelsPerSlot = 24;
+      const top = ((toMinutes(slot[1]) - calendarStart) / calendarStep) * pixelsPerSlot;
+      const height = ((toMinutes(slot[2]) - toMinutes(slot[1])) / calendarStep) * pixelsPerSlot;
+      const group = selection.option.group ? ` · ${selection.option.group}` : '';
+      const overlapClass = overlapInfo.minutes ? ' has-overlap' : '';
+      const overlapText = overlapInfo.minutes ? `Superposición de ${formatOverlap(overlapInfo.minutes)} con ${overlapInfo.subjects.join(' y ')}` : '';
+      return `<button class="calendar-event${overlapClass} text-left text-[10px] font-semibold shadow-sm transition" style="top:${top}px;height:${height}px;background:${colors.bg};border-color:${overlapInfo.minutes ? '#c94d3d' : colors.border};color:${colors.text}" data-overlap="${overlapText}" title="${selection.subject} · Com. ${selection.option.code}${group} · ${slot[0]} ${slot[1]}–${slot[2]}${overlapText ? ` · ${overlapText}` : ''}">
+        <span class="block truncate font-bold">${selection.subject}</span><span class="block truncate opacity-75">Com. ${selection.option.code}${group}</span><span class="block truncate opacity-75">${slot[1]}–${slot[2]}</span>
+      </button>`;
+    }
+    function calendarPanel(alternative, index) {
+      const byDay = Object.fromEntries(calendarDays.map(day => [day, []]));
+      alternative.selected.forEach(selection => {
+        if (!selection) return;
+        selection.option.slots.forEach(slot => byDay[slot[0]].push({ selection, slot }));
+      });
+      const omitted = alternative.selected.findIndex(selection => !selection);
+      return `<article class="calendar-panel rounded-2xl border ${chosen === index ? 'border-coral ring-2 ring-coral/15' : 'border-line'} bg-white p-4 shadow-card">
+        <div class="mb-4 flex items-start justify-between gap-3"><div><p class="text-xs font-bold uppercase tracking-[.18em] text-coral">Opción ${String(index + 1).padStart(2, '0')}</p><h3 class="mt-1 font-display text-xl">${alternative.covered} materias</h3></div><button data-calendar-choice="${index}" class="text-xs font-bold ${chosen === index ? 'text-coral' : 'text-teal'}">${chosen === index ? 'Seleccionada' : 'Seleccionar'}</button></div>
+        <div class="calendar-grid grid grid-cols-[42px_repeat(5,minmax(140px,1fr))]">
+          <div></div>${calendarDays.map(day => `<div class="border-b border-line pb-2 text-center text-[11px] font-bold uppercase tracking-wider text-ink/55">${day}</div>`).join('')}
+          <div class="calendar-labels pr-2 text-right text-[10px] text-ink/45">${timeLabels.map((label, timeIndex) => `<span class="block h-6 -translate-y-1">${timeIndex % 2 === 0 ? label : ''}</span>`).join('')}</div>
+          ${calendarDays.map(day => `<div class="calendar-lane relative border-l border-line">${byDay[day].map(({ selection, slot }, slotIndex) => {
+            const conflicts = byDay[day].filter((entry, otherIndex) => otherIndex !== slotIndex && overlapMinutes({ day, start: slot[1], end: slot[2] }, { day, start: entry.slot[1], end: entry.slot[2] }) > 0);
+            const minutes = conflicts.reduce((total, entry) => total + overlapMinutes({ day, start: slot[1], end: slot[2] }, { day, start: entry.slot[1], end: entry.slot[2] }), 0);
+            return calendarEvent(selection, slot, { minutes, subjects: conflicts.map(entry => entry.selection.subject) });
+          }).join('')}</div>`).join('')}
+        </div>
+        ${omitted >= 0 ? `<p class="mt-4 rounded-lg bg-coral/10 px-3 py-2 text-xs leading-5 text-coral"><strong>Pendiente:</strong> ${subjects[omitted].name}</p>` : ''}
+      </article>`;
+    }
+    function renderCalendar(visibleAlternatives) {
+      document.querySelector('#calendar').innerHTML = `<div class="space-y-6">${visibleAlternatives.map(calendarPanel).join('')}</div>`;
+      document.querySelector('#calendar-legend').innerHTML = subjects.map(subject => `<span class="flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full" style="background:${colorFor(subject.name).border}"></i>${subject.short}</span>`).join('');
+    }
+    function downloadCalendar() {
+      const alternative = alternatives[chosen];
+      const lines = [`Opción ${chosen + 1} · ${alternative.covered} materias`, ''];
+      alternative.selected.forEach(selection => {
+        if (!selection) return;
+        lines.push(`${selection.subject} · Com. ${selection.option.code}${selection.option.group ? ` ${selection.option.group}` : ''} · ${formatSlots(selection.option.slots)}`);
+      });
+      const omitted = alternative.selected.find(selection => !selection);
+      if (omitted) lines.push('', `Pendiente: ${subjects[alternative.selected.findIndex(selection => !selection)].name}`);
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `calendario-opcion-${chosen + 1}.txt`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }
+    function cardTemplate(alternative, index) {
+      const totalSlots = flattenSlots(alternative.selected);
+      const byDay = Object.entries(totalSlots.reduce((days, slot) => { (days[slot.day] ||= []).push(slot); return days; }, {})).sort(([a], [b]) => dayOrder[a] - dayOrder[b]);
+      const isChosen = chosen === index;
+      const omitted = alternative.selected.findIndex(selection => !selection);
+      return `<article class="schedule-card fade-up ${isChosen ? 'card-selected' : ''} flex flex-col rounded-2xl border border-line bg-white p-5 shadow-card transition" style="animation-delay:${index * 100}ms">
+        <div class="flex items-start justify-between gap-4">
+          <div><p class="text-xs font-bold uppercase tracking-[.18em] text-coral">Opción ${String(index + 1).padStart(2, '0')}</p><h3 class="mt-2 font-display text-2xl">${alternative.covered} materias</h3></div>
+          <button data-action="select" data-index="${index}" class="rounded-full border px-3 py-2 text-xs font-bold transition ${isChosen ? 'border-coral bg-coral text-white' : 'border-line text-ink/60 hover:border-coral hover:text-coral'}">${isChosen ? 'Elegida' : 'Elegir'}</button>
+        </div>
+        <div class="mt-5 h-2 overflow-hidden rounded-full bg-paper"><div class="bar h-full rounded-full bg-teal" style="width:${(alternative.covered / subjects.length) * 100}%"></div></div>
+        <div class="mt-5 flex-1 space-y-3">${alternative.selected.map((selection, subjectIndex) => selection ? `<div class="flex min-w-0 items-start justify-between gap-3 text-sm"><span class="min-w-0 font-semibold">${selection.subject}</span><span class="commission-label font-mono text-[11px] text-ink/50">${selection.option.code} ${selection.option.group}</span></div>` : `<div class="flex min-w-0 items-start justify-between gap-3 text-sm text-ink/40"><span class="min-w-0 font-semibold">${subjects[subjectIndex].name}</span><span class="commission-label text-[11px] font-bold uppercase">No incluida</span></div>`).join('')}</div>
+        <button data-action="toggle" data-index="${index}" class="mt-6 flex w-full items-center justify-between border-t border-line pt-4 text-left text-sm font-bold"><span>Ver agenda semanal</span><span class="toggle-icon text-xl font-normal text-teal">+</span></button>
+        <div data-details="${index}" class="hidden pt-4">${byDay.map(([day, slots]) => `<div class="schedule-line flex gap-3 pb-3 text-xs"><span class="mt-1 h-2 w-2 shrink-0 rounded-full bg-teal"></span><div><p class="font-bold text-ink">${day}</p>${slots.sort((a,b) => toMinutes(a.start) - toMinutes(b.start)).map(slot => `<p class="mt-1 text-ink/60">${slot.start}–${slot.end} <span class="text-ink/35">${slot.subject}</span></p>`).join('')}</div></div>`).join('')}</div>
+        ${omitted >= 0 ? `<p class="mt-4 rounded-lg bg-coral/10 px-3 py-2 text-xs leading-5 text-coral">Se posterga ${subjects[omitted].name} para evitar un cruce.</p>` : ''}
+      </article>`;
+    }
+    function render() {
+      const visibleAlternatives = alternatives.slice(0, visibleAlternativeCount);
+      cards.innerHTML = visibleAlternatives.map(cardTemplate).join('');
+      renderCalendar(visibleAlternatives);
+      document.querySelector('#course-count').textContent = alternatives[0]?.covered || 0;
+      const restrictionLabel = eveningOnly ? ` · desde ${String(Math.floor(minimumStartTime / 60)).padStart(2, '0')}:${String(minimumStartTime % 60).padStart(2, '0')}` : '';
+      const overlapLabel = maximumOverlapMinutes ? ` · hasta ${formatOverlap(maximumOverlapMinutes)} de superposición` : ' · sin superposición';
+      document.querySelector('#checked-label').innerHTML = `<span class="h-2 w-2 rounded-full bg-moss"></span> ${alternatives.length ? `${alternatives.length} alternativas encontradas${restrictionLabel}${overlapLabel}` : `Sin alternativas compatibles${restrictionLabel}${overlapLabel}`}`;
+      document.querySelector('#summary-subjects').textContent = subjects.map(subject => subject.name).join(' · ');
+      const timeSummary = eveningOnly ? `Solo cursar desde las ${String(Math.floor(minimumStartTime / 60)).padStart(2, '0')}:${String(minimumStartTime % 60).padStart(2, '0')}` : 'Sin restricción horaria';
+      const daysSummary = prioritizeFewDays ? ' · priorizando menos días' : '';
+      const overlapSummary = maximumOverlapMinutes ? ` · hasta ${formatOverlap(maximumOverlapMinutes)} de superposición` : ' · sin superposición';
+      document.querySelector('#summary-restriction').textContent = `${timeSummary}${daysSummary}${overlapSummary}`;
+      document.querySelector('#empty').classList.toggle('hidden', alternatives.length > 0);
+      document.querySelector('#more-options-wrap').classList.toggle('hidden', visibleAlternativeCount >= alternatives.length || alternatives.length === 0);
+      document.querySelector('#options-count').textContent = `Mostrando ${visibleAlternatives.length} de ${alternatives.length} alternativas compatibles`;
+    }
+    function formatOverlap(minutes) {
+      if (minutes % 60 === 0) return `${minutes / 60} ${minutes === 60 ? 'hora' : 'horas'}`;
+      if (minutes < 60) return `${minutes} min`;
+      return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+    }
+    document.querySelector('#more-options').addEventListener('click', () => {
+      visibleAlternativeCount += 1;
+      render();
+    });
+    cards.addEventListener('click', event => {
+      const button = event.target.closest('button');
+      if (!button) return;
+      const index = Number(button.dataset.index);
+      if (button.dataset.action === 'select') {
+        chosen = index;
+        localStorage.setItem(selectedKey, String(index));
+        render();
+      }
+      if (button.dataset.action === 'toggle') {
+        const detail = cards.querySelector(`[data-details="${index}"]`);
+        detail.classList.toggle('hidden');
+        button.querySelector('.toggle-icon').textContent = detail.classList.contains('hidden') ? '+' : '−';
+      }
+    });
+    document.querySelector('#calendar').addEventListener('click', event => {
+      const button = event.target.closest('[data-calendar-choice]');
+      if (!button) return;
+      chosen = Number(button.dataset.calendarChoice);
+      localStorage.setItem(selectedKey, String(chosen));
+      render();
+    });
+    document.querySelector('#print-calendar').addEventListener('click', () => window.print());
+    document.querySelector('#download-calendar').addEventListener('click', downloadCalendar);
+    function returnToSelection() {
+      document.querySelectorAll('#subject-picker input').forEach(input => {
+        const subject = loadedSubjects[Number(input.value)];
+        input.checked = Boolean(subject && subjects.some(selected => selected.name === subject.name));
+      });
+      document.querySelector('#evening-only').checked = eveningOnly;
+      document.querySelector('#minimum-time').value = `${String(Math.floor(minimumStartTime / 60)).padStart(2, '0')}:${String(minimumStartTime % 60).padStart(2, '0')}`;
+      document.querySelector('#few-days').checked = prioritizeFewDays;
+      document.querySelector('#overlap-limit').value = String(maximumOverlapMinutes);
+      updateSelectionCount();
+      document.querySelector('#results-app').classList.add('hidden');
+      document.querySelector('#selection-screen').classList.remove('hidden');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    document.querySelector('#edit-search').addEventListener('click', returnToSelection);
+    document.querySelector('#edit-search-summary').addEventListener('click', returnToSelection);
+
+    const dayNames = { Lunes: 'Lun', Martes: 'Mar', Miércoles: 'Mié', Miercoles: 'Mié', Jueves: 'Jue', Viernes: 'Vie' };
+    const formatExcelTime = value => {
+      if (value instanceof Date) return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
+      if (typeof value === 'number') {
+        const minutes = Math.round(value * 24 * 60);
+        return `${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+      }
+      const text = String(value).trim();
+      const match = text.match(/(\d{1,2}):(\d{2})/);
+      return match ? `${String(match[1]).padStart(2, '0')}:${match[2]}` : text;
+    };
+    function subjectsFromRows(rows) {
+      const bySubject = new Map();
+      rows.filter(row => row.elemento_nombre && row.comision != null && row.dia_semana).forEach(row => {
+        const name = String(row.elemento_nombre).trim();
+        if (!bySubject.has(name)) bySubject.set(name, new Map());
+        const byCommission = bySubject.get(name);
+        const code = String(row.comision).trim();
+        if (!byCommission.has(code)) byCommission.set(code, { code, group: String(row.comision_nombre || '').trim(), slots: [] });
+        byCommission.get(code).slots.push([
+          dayNames[String(row.dia_semana).trim()] || String(row.dia_semana).trim(),
+          formatExcelTime(row.hora_inicio),
+          formatExcelTime(row.hora_fin)
+        ]);
+      });
+      return [...bySubject.entries()].map(([name, commissions]) => ({
+        name,
+        short: name,
+        options: [...commissions.values()]
+      }));
+    }
+    function updateSelectionCount() {
+      const count = document.querySelectorAll('#subject-picker input:checked').length;
+      document.querySelector('#selected-count').textContent = `${count} seleccionada${count === 1 ? '' : 's'}`;
+      document.querySelector('#generate-button').disabled = count === 0;
+    }
+    function renderSubjectPicker(allSubjects, fileName) {
+      const picker = document.querySelector('#subject-picker');
+      picker.innerHTML = allSubjects.map((subject, index) => `<label class="group flex cursor-pointer items-start gap-4 rounded-xl border border-line bg-white p-4 shadow-card transition hover:-translate-y-0.5 hover:border-teal has-[:checked]:border-teal has-[:checked]:bg-teal/5">
+        <input type="checkbox" value="${index}" class="mt-1 h-4 w-4 accent-teal">
+        <span class="min-w-0"><span class="block font-bold leading-5">${subject.name}</span><span class="mt-1 block text-xs text-ink/50">${subject.options.length} comisiones disponibles</span><span class="mt-2 block text-[11px] font-mono text-ink/40">${subject.options.map(option => option.code).join(' · ')}</span></span>
+      </label>`).join('');
+      picker.addEventListener('change', updateSelectionCount);
+      document.querySelector('#selection-status').textContent = `${allSubjects.length} materias cargadas desde ${fileName}`;
+    }
+    function clearSubjectPicker(message = 'Cargá un archivo Excel para ver las materias disponibles') {
+      loadedSubjects = [];
+      document.querySelector('#subject-picker').innerHTML = '';
+      document.querySelector('#selection-status').textContent = message;
+      document.querySelector('#selected-count').textContent = '0 seleccionadas';
+      document.querySelector('#generate-button').disabled = true;
+      document.querySelector('#selection-error').classList.add('hidden');
+    }
+    async function loadWorkbook(file) {
+      try {
+        const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: '' });
+        const allSubjects = subjectsFromRows(rows);
+        if (!allSubjects.length) throw new Error('No se encontraron materias');
+        loadedSubjects = allSubjects;
+        renderSubjectPicker(allSubjects, file.name);
+        document.querySelector('#file-status').textContent = `${file.name} · ${allSubjects.length} materias disponibles`;
+        document.querySelector('#file-status').classList.remove('text-coral');
+        document.querySelector('#selection-error').classList.add('hidden');
+      } catch (error) {
+        document.querySelector('#file-status').textContent = 'No se pudo leer el archivo. Verificá que tenga una hoja válida.';
+        document.querySelector('#file-status').classList.add('text-coral');
+        document.querySelector('#selection-status').textContent = 'Esperando un archivo Excel válido';
+        clearSubjectPicker('Cargá un archivo Excel válido para ver las materias');
+      }
+    }
+    document.querySelector('#excel-file').addEventListener('change', event => {
+      const [file] = event.target.files;
+      if (file) {
+        clearSubjectPicker('Actualizando materias desde el archivo seleccionado...');
+        document.querySelector('#file-status').textContent = `Leyendo ${file.name}...`;
+        loadWorkbook(file);
+      }
+    });
+    document.querySelector('#generate-button').addEventListener('click', () => {
+      const selectedIndexes = [...document.querySelectorAll('#subject-picker input:checked')].map(input => Number(input.value));
+      if (!selectedIndexes.length) {
+        document.querySelector('#selection-error').classList.remove('hidden');
+        return;
+      }
+      eveningOnly = document.querySelector('#evening-only').checked;
+      minimumStartTime = toMinutes(document.querySelector('#minimum-time').value);
+      prioritizeFewDays = document.querySelector('#few-days').checked;
+      maximumOverlapMinutes = Number(document.querySelector('#overlap-limit').value);
+      subjects = selectedIndexes.map(index => loadedSubjects[index]);
+      alternatives = buildAlternatives();
+      visibleAlternativeCount = 3;
+      chosen = 0;
+      document.querySelector('#results-app').classList.remove('hidden');
+      document.querySelector('#selection-screen').classList.add('hidden');
+      document.querySelector('#results-app').scrollIntoView({ behavior: 'smooth' });
+      render();
+    });
+  </script>
+</body>
+</html>
